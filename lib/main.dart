@@ -203,7 +203,7 @@ class _PaymentPageState extends State<PaymentPage> {
     setState(() => _busy = true);
 
     try {
-      final response = await EdfaPgSdk.capture(transactionId: 'f7825d94-8d5f-40b7-a380-74795925b824' , amount: 100);
+      final response = await EdfaPgSdk.capture(transactionId: '' , amount: 100);
 
       debugPrint('REFUND: $response');
     } catch (e) {
@@ -212,27 +212,6 @@ class _PaymentPageState extends State<PaymentPage> {
       setState(() => _busy = false);
     }
   }
-
-  // Future<void> _refund() async {
-  //
-  //
-  //   setState(() => _busy = true);
-  //
-  //   try {
-  //     final transactionId = '';
-  //     final response = await EdfaPgSdk.refund(
-  //       transactionId: transactionId,
-  //       amount: 5.00,
-  //     );
-  //
-  //     debugPrint('REFUND: $response');
-  //   } catch (e) {
-  //     _showMessage('Error', e.toString());
-  //   } finally {
-  //     setState(() => _busy = false);
-  //   }
-  // }
-
 
 
   @override
@@ -257,16 +236,6 @@ class _PaymentPageState extends State<PaymentPage> {
               child: _busy ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Pay with Card'),
             ),
 
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _busy ? null : _payWithCheckout,
-              child: const Text('Pay with Checkout'),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _busy ? null : _void,
-              child: const Text('Void'),
-            ),
             const SizedBox(height: 8),
             ElevatedButton(
               onPressed: _busy ? null : _payWithApple,
