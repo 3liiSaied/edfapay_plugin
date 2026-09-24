@@ -1,8 +1,8 @@
-import 'dart:ffi';
 import 'dart:io';
 
 import 'package:edfapay_pg_plugin/edfapay_pg_sdk.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 
@@ -10,7 +10,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await EdfaPgSdk.setEnableLogs(true);
-  await EdfaPgSdk.initialize(apiKey: '574991A0E3817371784632FAA08B3EDB690877893FCE85A289869B354BA675CE', baseUrl: 'https://demo-api.edfapay.com');
+  await EdfaPgSdk.initialize(apiKey: '', baseUrl: '');
+
 
   runApp(const MyApp());
 }
@@ -32,6 +33,10 @@ class PaymentPage extends StatefulWidget {
 }
 
 class _PaymentPageState extends State<PaymentPage> {
+  static const _applePayChannel = MethodChannel('edfapay_plugin/apple_pay');
+  static const _applePayMerchantIdentifier =
+      'merchant.com.example.edfapay';
+
   final TextEditingController _amountController = TextEditingController(text: '1.00');
   bool _busy = false;
 
@@ -51,10 +56,11 @@ class _PaymentPageState extends State<PaymentPage> {
 
     setState(() => _busy = true);
     try {
+
       final cardPay = EdfaPgSdk.cardPay()
         ..setOrder(EdfaPgSaleOrder(
           id: Uuid().v4(),
-          amount: 1000,
+          amount: amount,
           currency: 'SAR',
           description: 'Sample order',
         ))
@@ -62,7 +68,9 @@ class _PaymentPageState extends State<PaymentPage> {
           email: 'alisaied@gmail.com',
           phone: '+966551234567', firstName: '', lastName: '', address: '', country: '', city: '', zip: '', ip: '',
         ))
+
         ..setDesignType(EdfaPayDesignType.one)
+        ..setAuth(true)
         ..onTransactionSuccess((result) => _showMessage('Success', 'Payment successful'))
         ..onTransactionFailure((error) => _showMessage('Failure', error.toString()));
 
@@ -86,33 +94,146 @@ class _PaymentPageState extends State<PaymentPage> {
       _showMessage('Error', 'Enter a valid amount');
       return;
     }
-
     setState(() => _busy = true);
     try {
-      // Placeholder Apple Pay request. Fill required fields (merchantIdentifier, countryCode, etc.)
-      // Update merchantIdentifier to your registered Apple Pay merchant id (e.g. 'merchant.com.example').
+      if (_applePayMerchantIdentifier == 'merchant.com.example.edfapay') {
+        throw StateError(
+          'Replace _applePayMerchantIdentifier with your Apple Pay Merchant ID.',
+        );
+      }
 
-      final response = await EdfaPgSdk.applePay(ApplePayRequest(
-        orderId: Uuid().v4(),
-        amount: 0.11,
-        currency: 'SAR',
-        //merchantIdentifier: 'merchant.com.example',
-        // <-- set your merchant id here
-        customer: ApplePayCustomer(name: "John Doe", email: "email@example.com",
-            phone: "+966500000000"),
-        successUrl: '', failureUrl: '',
+      final payment = await _applePayChannel.invokeMethod<Map<Object?, Object?>>(
+        'start',
+        {
+          'amount': amount,
+          'merchantIdentifier': _applePayMerchantIdentifier,
+        },
+      );
+      final token = payment?['token'];
+      if (token is! String || token.isEmpty) {
+        throw StateError('Apple Pay did not return a payment token.');
+      }
 
-        card:ApplePayCard(token: "") , // optional per your Apple Pay configuration
-      ));
-
+      final response = await EdfaPgSdk.applePay(
+        ApplePayRequest(
+          orderId: Uuid().v4(),
+          amount: amount,
+          currency: 'SAR',
+          customer: ApplePayCustomer(
+            name: 'John Doe',
+            email: 'email@example.com',
+            phone: '+966500000000',
+          ),
+          successUrl: '',
+          failureUrl: ' ',
+          card: ApplePayCard(token: token),
+        ),
+      );
       _showMessage('ApplePay result', response.toString());
-
     } catch (e) {
       _showMessage('ApplePay error', e.toString());
     } finally {
       setState(() => _busy = false);
     }
   }
+
+  Future<void> _payWithCheckout() async {
+
+    final text = _amountController.text.replaceAll(',', '').trim();
+    final amount = double.tryParse(text);
+    if (amount == null || amount <= 0) {
+      _showMessage('Error', 'Enter a valid amount');
+      return;
+    }
+    final paymentAmount = amount.toInt();
+    if (paymentAmount <= 0) {
+      _showMessage('Error', 'Enter an amount of at least 1 SAR');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+
+      final response = await EdfaPgSdk.externalPayment(
+        ExternalPaymentRequest(
+          orderId: Uuid().v4(),
+          paymentMethod: ExternalPaymentMethod.tamara,
+          amount: paymentAmount,
+          currency: 'SAR',
+          phoneNumber: '+966500000000',
+          email: 'customer@example.com',
+          invoice: InvoiceDto(
+            shippingCharges: 0,
+            extraCharges: 0,
+            extraDiscount: 0,
+            total: paymentAmount.toDouble(),
+            lineItems: [
+              LineItemDto(
+                sku: 'checkout-order',
+                description: 'Sample order',
+                url: '',
+                unitCost: paymentAmount.toDouble(),
+                quantity: 1,
+                netTotal: paymentAmount.toDouble(),
+                discountRate: 0,
+                discountAmount: 0,
+                taxRate: 0,
+                taxTotal: 0,
+                total: paymentAmount.toDouble(),
+              ),
+
+            ],
+
+          ),
+        ),
+      );
+     // final checkoutUrl = response['checkoutDeeplink'];
+      _showMessage('Checkout result ', response.toString());
+     // debugPrint('Checkout URL: $checkoutUrl');
+
+    } catch (e) {
+      _showMessage('Checkout error', e.toString());
+    } finally {
+      setState(() => _busy = false);
+    }
+  }
+  Future<void> _void() async {
+
+
+    setState(() => _busy = true);
+
+    try {
+      final response = await EdfaPgSdk.capture(transactionId: 'f7825d94-8d5f-40b7-a380-74795925b824' , amount: 100);
+
+      debugPrint('REFUND: $response');
+    } catch (e) {
+      _showMessage('Error', e.toString());
+    } finally {
+      setState(() => _busy = false);
+    }
+  }
+
+  // Future<void> _refund() async {
+  //
+  //
+  //   setState(() => _busy = true);
+  //
+  //   try {
+  //     final transactionId = '';
+  //     final response = await EdfaPgSdk.refund(
+  //       transactionId: transactionId,
+  //       amount: 5.00,
+  //     );
+  //
+  //     debugPrint('REFUND: $response');
+  //   } catch (e) {
+  //     _showMessage('Error', e.toString());
+  //   } finally {
+  //     setState(() => _busy = false);
+  //   }
+  // }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +256,17 @@ class _PaymentPageState extends State<PaymentPage> {
               onPressed: _busy ? null : _payWithCard,
               child: _busy ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Pay with Card'),
             ),
+
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: _busy ? null : _payWithCheckout,
+              child: const Text('Pay with Checkout'),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: _busy ? null : _void,
+              child: const Text('Void'),
+            ),
             const SizedBox(height: 8),
             ElevatedButton(
               onPressed: _busy ? null : _payWithApple,
@@ -146,4 +278,5 @@ class _PaymentPageState extends State<PaymentPage> {
       ),
     );
   }
+
 }
